@@ -11,7 +11,7 @@ const client = dgram.createSocket('udp4');
 
 //setting 
 const serverAddress = '127.0.0.1';  // 地址
-const serverPort = 41234;  // 破號
+const serverPort = 1234;  // 破號
 
 const serverOptions = {
   key: fs.readFileSync('server-key.pem'),
@@ -65,7 +65,7 @@ wss.on('connection', (ws) => {
         }
         });
       }else if(jsonMessage.type == "control") {
-        const message = Buffer.from(`Speed:${jsonMessage.degree} Distance:${jsonMessage.distance}`);
+        const message = Buffer.from(`MOVE ${jsonMessage.distance} ${jsonMessage.degree} 3000 3000`);
         client.send(message, 0, message.length, serverPort, serverAddress, (err) => {
           if (err) {
             console.log('發送錯誤:', err);
