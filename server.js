@@ -5,9 +5,17 @@ const express = require('express');
 const cors = require('cors');
 const { json } = require('stream/consumers');
 
+//udp socket
+const dgram = require('dgram');
+const client = dgram.createSocket('udp4');
+
+//setting 
+const serverAddress = '127.0.0.1';  // 地址
+const serverPort = 41234;  // 破號
+
 const serverOptions = {
   key: fs.readFileSync('server-key.pem'),
-  cert: fs.readFileSync('server-cert.pem')
+  cert: fs.readFileSync('server-cert.pem'),
 };
 
 const users = new Map();
@@ -19,7 +27,7 @@ app.use(cors({
 }));
 app.get('/checkUser', (req, res) => {
   const username = req.query.username;
-  if (user == null && user == "" && users.has(username)) {
+  if (username == null || username == "" || users.has(username)) {
     return res.status(200).json({ exists: true });
   }
   users.set(username)
@@ -30,8 +38,6 @@ const httpsServer = https.createServer(serverOptions, app);
 const wss = new WebSocket.Server({ server: httpsServer });
 
 wss.on('connection', (ws) => {
-  console.log('有用戶連接到聊天室');
-
   ws.on('message', (message) => {
     message = message.toString()
     console.log(message)
@@ -43,6 +49,36 @@ wss.on('connection', (ws) => {
             ob = {
               type: "add user",
               message: `歡迎 ${jsonMessage.user} 加入聊天室`,
+            }
+            client.send(JSON.stringify(ob));
+          }
+        });
+      }else if(jsonMessage.type == "leave") {
+        users.delete(jsonMessage.user)
+        wss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+          ob = {
+            type: "leave",
+            message: `${jsonMessage.user} 已離開聊天室`
+          }
+          client.send(JSON.stringify(ob));
+        }
+        });
+      }else if(jsonMessage.type == "control") {
+        const message = Buffer.from(`Speed:${jsonMessage.degree} Distance:${jsonMessage.distance}`);
+        client.send(message, 0, message.length, serverPort, serverAddress, (err) => {
+          if (err) {
+            console.log('發送錯誤:', err);
+          } else {
+            console.log(`Speed:${jsonMessage.degree} Distance:${jsonMessage.distance}` + '，消息已發送到服務器!');
+          }
+          client.close();
+        });
+        wss.clients.forEach((client) => {
+          if (client.readyState === WebSocket.OPEN) {
+            ob = {
+              type: "control",
+              message: `輸入: 角度 ${jsonMessage.degree} 距離 ${jsonMessage.distance}`,
             }
             client.send(JSON.stringify(ob));
           }
@@ -71,5 +107,5 @@ wss.on('connection', (ws) => {
 });
 
 httpsServer.listen(8000, () => {
-  console.log('安全的 WebSocket 聊天室伺服器啟動於 https://localhost:8000');
+  console.log('ESP32機器人聊天室伺服器啟動於 https://localhost:8000');
 });

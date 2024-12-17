@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32機器人聊天室</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f4f9;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      width: 80%;
+      margin-top: 10px;
+    }
+
+    .header button {
+      background-color: transparent;
+      border: none;
+      cursor: pointer;
+      font-size: 1.5em;
+      margin-right: 10px;
+    }
+
+    .header h1 {
+      color: #333;
+      margin: 0;
+    }
+    .header p {
+        margin: 0;
+        margin-left: 30px;
+    }
+
+    #chat {
+        box-sizing: border-box;
+        border: 1px solid #ccc;
+        background-color: #fff;
+        width: 80%;
+        height: 75vh;
+        overflow-y: scroll;
+        margin-bottom: 10px;
+        padding: 10px;
+        border-radius: 8px;
+    }
+
+    .message {
+        margin: 5px 0;
+        padding: 8px 12px;
+        border-radius: 15px;
+        word-wrap: break-word;
+        box-sizing: border-box;
+    }
+
+    .message.system {
+        padding: 4px 6px;
+        font-size: smaller;
+        width: 100%;
+        text-align: center;
+    }
+
+    .message.me {
+        max-width: 60%;
+        background-color: #d1e7dd;
+        text-align: right;
+        margin-left: auto;
+    }
+
+    .message.others {
+        max-width: 60%;
+        background-color: #f8d7da;
+        text-align: left;
+        margin-right: auto;
+    }
+
+    .username {
+      font-size: 0.8em;
+      font-weight: bold;
+      margin-bottom: 3px;
+    }
+
+    input, button {
+      margin: 5px;
+      padding: 10px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+
+    button {
+      background-color: #007bff;
+      color: white;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    .input-container {
+      display: flex;
+      width: 80%;
+    }
+
+    #message {
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+    <div class="header">
+        <!-- 回到首頁的按鈕 -->
+        <button onclick="goBack()">
+        ⬅️
+        </button>
+        <h1>ESP32機器人聊天室</h1>
+        <div>
+            <p>指令:$ ([角度],[距離]) </p>
+            <p>角度:0~360 距離:0~200</p>
+        </div>
+    </div>
+    <div id="chat"></div>
+    <div class="input-container">
+        <input type="text" id="message" placeholder="輸入訊息" onkeypress="handleKeyPress(event)" />
+        <button onclick="sendMessage()">發送</button>
+    </div>
+
+    <script>
+        function validateFormat(input) {
+            const regex = /^\$ \((\d+(\.\d+)?),(\d+(\.\d+)?)\)$/;
+        
+            // 檢查字串是否符合格式
+            const match = input.match(regex);
+            if (!match) {
+            return false;
+            }
+        
+            // 解析 degree 和 distance
+            const degree = parseFloat(match[1]);
+            const distance = parseFloat(match[3]);
+        
+            // 檢查數值範圍
+            if (degree >= 0 && degree <= 360 && distance >= 0 && distance <= 200) {
+                return {
+                    degree: degree,
+                    distance: distance
+                };
+            } else {
+                return false;
+            }
+        }
+
+        const socket = new WebSocket('wss://localhost:8000');
+        let username = localStorage.getItem("username");
+        if (username == null) {
+            window.location = "/";
+        }
+
+        window.addEventListener('unload', userLeave);
+        function userLeave() {
+            localStorage.removeItem("username");
+                let ob = {
+                    type: "leave",
+                    user: username,
+                };
+                socket.send(JSON.stringify(ob));
+            }
+        socket.onopen = () => {
+            console.log('已連接到安全的 WebSocket 伺服器');
+            addMessage('', '已連接到聊天室', 'system');
+            let ob = {
+                type: "add user",
+                user: username,
+            };
+            socket.send(JSON.stringify(ob));
+        };
+
+        socket.onmessage = (event) => {
+            let ob = JSON.parse(event.data);
+            if (ob.type == "add user") {
+                addMessage('', ob.message, 'system');
+            }else if(ob.type == "leave"){
+                addMessage('', ob.message, 'system');
+            }else if(ob.type == "control"){
+                addMessage('', ob.message, 'system');
+            }else {
+                const messageType = ob.user === username ? 'me' : 'others';
+                addMessage(ob.user, ob.message, messageType);
+            }
+        };
+
+        socket.onclose = () => {
+            localStorage.removeItem("username");
+            console.log('已斷開連接');
+            addMessage('', '已斷開連接', 'system');
+        };
+
+        socket.onerror = (error) => {
+            console.error('WebSocket 錯誤:', error);
+        };
+
+        function sendMessage() {
+            const input = document.getElementById('message');
+            const message = input.value.trim();
+            if (message) {
+                let ob = {
+                    type: "send",
+                    user: username,
+                    message: message
+                };
+                socket.send(JSON.stringify(ob));
+                input.value = '';
+                let control = validateFormat(message)
+                if(control) {
+                    // alert(`control: degree:${control.degree} distance${control.distance}`)
+                    let ob = {
+                        type: "control",
+                        degree: control.degree,
+                        distance: control.distance
+                    };
+                    socket.send(JSON.stringify(ob));
+                }
+            }
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        function addMessage(from, message, messageType) {
+            const chat = document.getElementById('chat');
+            const newMessage = document.createElement('div');
+            newMessage.classList.add('message', messageType);
+
+            if (messageType === 'system') {
+                newMessage.textContent = `系統: ${message}`;
+            } else {
+                const usernameDiv = document.createElement('div');
+                usernameDiv.classList.add('username');
+                usernameDiv.textContent = from;
+                newMessage.appendChild(usernameDiv);
+                const messageDiv = document.createElement('div');
+                messageDiv.textContent = message;
+                newMessage.appendChild(messageDiv);
+            }
+
+            chat.appendChild(newMessage);
+            chat.scrollTop = chat.scrollHeight; // 自動滾動到底部
+        }
+
+        function goBack() {
+            userLeave()
+            window.location = "/";
+        }
+    </script>
+</body>
+</html>
