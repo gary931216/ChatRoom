@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TLS WebSocket 聊天室</title>
+</head>
+<body>
+  <h1>線上聊天室</h1>
+  <div id="chat" style="border: 1px solid #000; height: 300px; overflow-y: scroll; margin-bottom: 10px; padding: 5px;">
+  </div>
+  <input type="text" id="message" placeholder="輸入訊息" onchange="sendMessage()"/>
+  <button onclick="sendMessage()">發送</button>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script>
+    let username = prompt("輸入您的暱稱:")
+    console.log(username)
+    checkUserExist(username)
+
+    function checkUserExist() {
+      fetch(`https://localhost:8000/checkUser?username=${username}`)
+      .then((response) => response.json())
+      .then((response) => {
+        console.log(response)
+        if(response.exists) {
+          if(username == "" || username == null) {
+            alert("請輸入暱稱")
+          }else {
+            alert("使用者已存在")
+          }
+          username = prompt("輸入您的暱稱:")
+          checkUserExist(username)
+        }
+      })
+    }
+
+    
+
+    // 連接到安全的 WebSocket 伺服器
+    const socket = new WebSocket('wss://localhost:8000');
+
+    socket.onopen = () => {
+      console.log('已連接到安全的 WebSocket 伺服器');
+      addMessage("",'已連接到聊天室');
+      let ob = {
+        type: "add user",
+        user: username,
+      }
+      socket.send(JSON.stringify(ob));
+    };
+
+    socket.onmessage = (event) => {
+      console.log(event.data)
+      let ob = JSON.parse(event.data);
+      if(ob.type == "add user") {
+        addMessage("", ob.message);
+      }else {
+        addMessage(ob.user, ob.message);
+      }
+    };
+
+    socket.onclose = () => {
+      console.log('已斷開連接');
+      addMessage("",'已斷開連接');
+    };
+
+    socket.onerror = (error) => {
+      console.error('WebSocket 錯誤:', error);
+    };
+
+    function sendMessage() {
+      const input = document.getElementById('message');
+      const message = input.value.trim();
+      if (message) {
+        let ob = {
+          type: "send",
+          user: username,
+          message: message
+        }
+        socket.send(JSON.stringify(ob));
+        input.value = '';
+      }
+    }
+
+    function addMessage(from, message) {
+      console.log(from)
+      console.log(message)
+      const chat = document.getElementById('chat');
+      const newMessage = document.createElement('div');
+      if(from == "") {
+        newMessage.textContent = "系統:" + message;
+      }else {
+        newMessage.textContent = from + ":" + message;
+      }
+      chat.appendChild(newMessage);
+      chat.scrollTop = chat.scrollHeight; // 自動滾動到底部
+    }
+  </script>
+</body>
+</html>
